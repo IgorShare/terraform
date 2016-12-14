@@ -10,10 +10,17 @@ import (
 
 	"github.com/hashicorp/go-getter"
 	"github.com/hashicorp/terraform/config"
+	"os"
 )
 
 // RootName is the name of the root tree.
 const RootName = "root"
+
+// Module Manifest file name
+const ManifestFile = "terrafile.hcl"
+
+// TerraModule prefix
+const TerraModulePrefix = "terramodule::"
 
 // Tree represents the module import tree of configurations.
 //
@@ -146,11 +153,27 @@ func (t *Tree) Load(s getter.Storage, mode GetMode) error {
 	modules := t.Modules()
 	children := make(map[string]*Tree)
 
+	moduleDependenciesMap := make(map[string]TerraModuleManifest)
+	moduleDependencies := &(moduleDependenciesMap)
+	if _, err := os.Stat(ManifestFile); err == nil {
+		moduleDependencies, _ = LoadModuleDependencies(ManifestFile)
+	}
+
 	// Go through all the modules and get the directory for them.
 	for _, m := range modules {
 		if _, ok := children[m.Name]; ok {
 			return fmt.Errorf(
 				"module %s: duplicated. module names must be unique", m.Name)
+		}
+
+		fmt.Printf("Module name: %s, source: %s", m.Name, m.Source)
+		if strings.HasPrefix(m.Source, TerraModulePrefix) {
+			moduleID := strings.TrimPrefix(m.Source, TerraModulePrefix)
+			if moduleManifest, ok := (*moduleDependencies)[moduleID]; !ok {
+				return fmt.Errorf("module %s: not defined in the dependencies manifest.", m.Name)
+			} else {
+				m.Source = moduleManifest.Path
+			}
 		}
 
 		// Determine the path to this child
